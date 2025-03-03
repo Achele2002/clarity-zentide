@@ -6,7 +6,10 @@
 (define-constant err-unauthorized (err u401))
 (define-constant err-duplicate-profile (err u100))
 (define-constant err-invalid-duration (err u102))
+(define-constant err-empty-name (err u103))
 (define-constant max-duration u180) ;; 3 hours max
+(define-constant blocks-per-day u144) ;; ~24 hours in blocks
+(define-constant streak-window u12) ;; ±2 hour window for streak
 
 ;; Data structures
 (define-map user-profiles
@@ -24,7 +27,9 @@
 ;; Public functions
 (define-public (create-profile (name (string-utf8 64)))
   (begin
+    (asserts! (not (is-eq (len name) u0)) err-empty-name)
     (asserts! (is-none (get-profile tx-sender)) err-duplicate-profile)
+    (print { type: "profile-created", user: tx-sender })
     (ok (map-set user-profiles tx-sender {
       name: name,
       join-date: block-height,
@@ -41,6 +46,7 @@
     (current-profile (unwrap! (get-profile tx-sender) err-not-found))
   )
     (asserts! (<= duration max-duration) err-invalid-duration)
+    (print { type: "activity-logged", activity: activity-type, user: tx-sender })
     (match activity-type
       "meditation" (ok (map-set user-profiles tx-sender
         (merge current-profile { 
@@ -68,7 +74,12 @@
 )
 
 (define-private (is-consecutive-day (last-activity uint))
-  (is-eq (- block-height last-activity) u144) ;; roughly 24 hours in blocks
+  (let ((blocks-since-last (- block-height last-activity)))
+    (and 
+      (>= blocks-since-last (- blocks-per-day streak-window))
+      (<= blocks-since-last (+ blocks-per-day streak-window))
+    )
+  )
 )
 
 ;; Read only functions
